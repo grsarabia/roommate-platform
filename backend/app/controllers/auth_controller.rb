@@ -1,4 +1,4 @@
-class Api::V1::AuthController < ApplicationController
+class AuthController < ApplicationController
   def register
     user = User.new(user_params)
     if user.save
@@ -27,6 +27,6 @@ class Api::V1::AuthController < ApplicationController
 
   def encode_token(user_id)
     payload = { user_id: user_id, exp: 24.hours.from_now.to_i }
-    JWT.encode(payload, ENV['JWT_SECRET'], 'HS256')
+    JWT.encode(payload, Rails.application.credentials.secret_key_base, 'HS256')
   end
 end

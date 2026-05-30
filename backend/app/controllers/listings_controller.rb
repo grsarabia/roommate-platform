@@ -1,6 +1,8 @@
-class Api::V1::ListingsController < ApplicationController
-  before_action :authorize_request, only: [:create, :update, :destroy]
-  before_action :set_listing, only: [:show, :update, :destroy]
+class ListingsController < ApplicationController
+  include Authenticable
+  
+  skip_before_action :authenticate_user!, only: [:index, :show, :increment_view]
+  before_action :set_listing, only: [:show, :update, :destroy, :increment_view]
 
   def index
     render json: Listing.all
@@ -11,7 +13,7 @@ class Api::V1::ListingsController < ApplicationController
   end
 
   def create
-    listing = @current_user.listings.build(listing_params)
+    listing = current_user.listings.build(listing_params)
     if listing.save
       render json: listing, status: :created
     else
@@ -23,7 +25,7 @@ class Api::V1::ListingsController < ApplicationController
     @listing = Listing.find(params[:id])
 
     if @listing.update(listing_params)
-      # 🔹 Manejo de fotos existentes
+      # Manejo de fotos existentes
       if params[:existing_photos]
         # Mantener solo las fotos que quedaron
         @listing.photos.each do |photo|
@@ -36,7 +38,7 @@ class Api::V1::ListingsController < ApplicationController
         @listing.photos.purge
       end
 
-      # 🔹 Agregar fotos nuevas
+      # Agregar fotos nuevas
       if params[:listing][:photos]
         params[:listing][:photos].each do |photo|
           @listing.photos.attach(photo)
@@ -50,12 +52,17 @@ class Api::V1::ListingsController < ApplicationController
   end
 
   def destroy
-    if @listing.user == @current_user
+    if @listing.user == current_user
       @listing.destroy
       head :no_content
     else
       render json: { errors: "No autorizado" }, status: :forbidden
     end
+  end
+
+  def increment_view
+    @listing.increment!(:views_count)
+    render json: { views_count: @listing.views_count }, status: :ok
   end
 
   private

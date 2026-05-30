@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -9,33 +10,16 @@ export default function RegisterPage() {
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [message, setMessage] = useState("");
   const router = useRouter();
+  const { register } = useAuth();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          password,
-          password_confirmation: passwordConfirmation,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.token) {
-        localStorage.setItem("token", data.token);
-        setMessage("Registro exitoso ✅");
-        router.push("/listings"); // redirige a la lista de publicaciones
-      } else {
-        const errorMessage = data.error || "Error en el registro";
-        setMessage("Error: " + errorMessage);
-      }
-    } catch (error) {
-      console.error(error);
-      setMessage("Error de conexión ❌");
+      await register(email, password, passwordConfirmation);
+      setMessage("Registro exitoso ✅");
+      router.push("/onboarding");
+    } catch (error: any) {
+      setMessage("Error: " + (error.message || "Error en el registro"));
     }
   }
 

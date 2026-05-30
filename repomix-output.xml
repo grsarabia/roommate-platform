@@ -40,55 +40,35 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
-.github/
-  workflows/
-    ci.yml
 backend/
-  .git/
-    gk/
-      config
-    hooks/
-      applypatch-msg.sample
-      commit-msg.sample
-      fsmonitor-watchman.sample
-      post-update.sample
-      pre-applypatch.sample
-      pre-commit.sample
-      pre-merge-commit.sample
-      pre-push.sample
-      pre-rebase.sample
-      pre-receive.sample
-      prepare-commit-msg.sample
-      push-to-checkout.sample
-      sendemail-validate.sample
-      update.sample
-    info/
-      exclude
-    config
-    description
-    HEAD
   .github/
-    workflows/
-      ci.yml
     dependabot.yml
   app/
     controllers/
       api/
         v1/
           auth_controller.rb
+          listings_controller.rb
           users_controller.rb
       concerns/
         .keep
       application_controller.rb
     jobs/
       application_job.rb
+    lib/
+      json_web_token.rb
     mailers/
       application_mailer.rb
     models/
       concerns/
         .keep
       application_record.rb
+      listing.rb
       user.rb
+    serializers/
+      listing_serializer.rb
+      photo_serializer.rb
+      user_serializer.rb
     views/
       layouts/
         mailer.html.erb
@@ -120,7 +100,6 @@ backend/
     boot.rb
     bundler-audit.yml
     cable.yml
-    ci.rb
     credentials.yml.enc
     database.yml
     environment.rb
@@ -130,6 +109,11 @@ backend/
   db/
     migrate/
       20260522_create_users_profiles_listings.rb
+      20260524021625_rename_encrypted_password_to_password_digest.rb
+      20260524030553_add_user_id_to_listings.rb
+      20260524030814_remove_owner_id_from_listings.rb
+      20260524212938_create_active_storage_tables.active_storage.rb
+    schema.rb
     seeds.rb
   lib/
     tasks/
@@ -148,12 +132,14 @@ backend/
     fixtures/
       files/
         .keep
+      listings.yml
     integration/
       .keep
     mailers/
       .keep
     models/
       .keep
+      listing_test.rb
     test_helper.rb
   tmp/
     pids/
@@ -175,17 +161,44 @@ backend/
   README.md
 frontend/
   app/
+    listings/
+      [id]/
+        edit/
+          page.tsx
+        page.tsx
+      new/
+        page.tsx
+      page.tsx
+    login/
+      page.tsx
+    profile/
+      edit/
+        page.tsx
+      page.tsx
+    register/
+      page.tsx
     favicon.ico
     globals.css
     layout.tsx
     page.tsx
+    postcss.config.js
+    tailwind.config.js
+  components/
+    ConfirmModal.tsx
+    ListingCard.tsx
+    ListingCarousel.tsx
+    ListingForm.tsx
+    ListingGallery.tsx
+    Loader.tsx
+    LoginPage.tsx
+  context/
+    AuthContext.tsx
   hooks/
+    useAuth.ts
+    useListings.ts
     useProfile.js
   lib/
     api.js
-  pages/
-    login.js
-    profile.js
   public/
     file.svg
     globe.svg
@@ -211,943 +224,524 @@ README.md
 <files>
 This section contains the contents of the repository's files.
 
-<file path="backend/.git/gk/config">
+<file path="frontend/app/login/page.tsx">
+"use client";
 
-</file>
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-<file path="backend/.git/hooks/applypatch-msg.sample">
-#!/bin/sh
-#
-# An example hook script to check the commit log message taken by
-# applypatch from an e-mail message.
-#
-# The hook should exit with non-zero status after issuing an
-# appropriate message if it wants to stop the commit.  The hook is
-# allowed to edit the commit message file.
-#
-# To enable this hook, rename this file to "applypatch-msg".
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-. git-sh-setup
-commitmsg="$(git rev-parse --git-path hooks/commit-msg)"
-test -x "$commitmsg" && exec "$commitmsg" ${1+"$@"}
-:
-</file>
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
 
-<file path="backend/.git/hooks/commit-msg.sample">
-#!/bin/sh
-#
-# An example hook script to check the commit log message.
-# Called by "git commit" with one argument, the name of the file
-# that has the commit message.  The hook should exit with non-zero
-# status after issuing an appropriate message if it wants to stop the
-# commit.  The hook is allowed to edit the commit message file.
-#
-# To enable this hook, rename this file to "commit-msg".
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-# Uncomment the below to add a Signed-off-by line to the message.
-# Doing this in a hook is a bad idea in general, but the prepare-commit-msg
-# hook is more suited to it.
-#
-# SOB=$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
-# grep -qs "^$SOB" "$1" || echo "$SOB" >> "$1"
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem("token", data.token); // 🔹 guardar token
+        router.push("/listings"); // 🔹 redirigir al listado
+      } else {
+        const err = await res.json();
+        setError(err.error || "Error al iniciar sesión");
+      }
+    } catch (err) {
+      setError("Error de conexión con el servidor");
+    }
+  }
 
-# This example catches duplicate Signed-off-by lines.
+  return (
+    <div className="max-w-md mx-auto mt-20 bg-white p-6 rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold mb-4">Iniciar sesión</h1>
 
-test "" = "$(grep '^Signed-off-by: ' "$1" |
-	 sort | uniq -c | sed -e '/^[ 	]*1[ 	]/d')" || {
-	echo >&2 Duplicate Signed-off-by lines.
-	exit 1
+      {error && <p className="text-red-600 mb-3">{error}</p>}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+            required
+          />
+        </div>
+
+        <button
+          type="submit"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md"
+        >
+          Entrar
+        </button>
+      </form>
+    </div>
+  );
 }
 </file>
 
-<file path="backend/.git/hooks/fsmonitor-watchman.sample">
-#!/usr/bin/perl
+<file path="frontend/app/profile/edit/page.tsx">
+"use client";
 
-use strict;
-use warnings;
-use IPC::Open2;
+import { useState, useEffect } from "react";
+import { useAuth } from "../../../hooks/useAuth";
+import { useRouter } from "next/navigation";
 
-# An example hook script to integrate Watchman
-# (https://facebook.github.io/watchman/) with git to speed up detecting
-# new and modified files.
-#
-# The hook is passed a version (currently 2) and last update token
-# formatted as a string and outputs to stdout a new update token and
-# all files that have been modified since the update token. Paths must
-# be relative to the root of the working tree and separated by a single NUL.
-#
-# To enable this hook, rename this file to "query-watchman" and set
-# 'git config core.fsmonitor .git/hooks/query-watchman'
-#
-my ($version, $last_update_token) = @ARGV;
+export default function EditProfilePage() {
+  const { user, token } = useAuth();
+  const router = useRouter();
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [message, setMessage] = useState("");
+  const [errors, setErrors] = useState<{ phone?: string; password?: string }>({});
 
-# Uncomment for debugging
-# print STDERR "$0 $version $last_update_token\n";
+  useEffect(() => {
+    if (user?.phone) {
+      setPhone(user.phone);
+    }
+  }, [user]);
 
-# Check the hook interface version
-if ($version ne 2) {
-	die "Unsupported query-fsmonitor hook version '$version'.\n" .
-	    "Falling back to scanning...\n";
-}
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
 
-my $git_work_tree = get_working_dir();
+    // 🔹 Validaciones frontend
+    const newErrors: { phone?: string; password?: string } = {};
+    if (phone && !/^\d{8,}$/.test(phone)) {
+      newErrors.phone = "El teléfono debe tener al menos 8 dígitos numéricos.";
+    }
+    if (password && password.length < 6) {
+      newErrors.password = "La contraseña debe tener al menos 6 caracteres.";
+    }
+    setErrors(newErrors);
 
-my $retry = 1;
+    if (Object.keys(newErrors).length > 0) return;
 
-my $json_pkg;
-eval {
-	require JSON::XS;
-	$json_pkg = "JSON::XS";
-	1;
-} or do {
-	require JSON::PP;
-	$json_pkg = "JSON::PP";
-};
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          phone,
+          ...(password ? { password } : {}),
+        }),
+      });
 
-launch_watchman();
+      if (res.ok) {
+        setMessage("Perfil actualizado correctamente ✅");
+        setTimeout(() => router.push("/profile"), 1500);
+      } else {
+        const err = await res.json();
+        setMessage(err.errors || "Error al actualizar perfil ❌");
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage("Error de conexión ❌");
+    }
+  }
 
-sub launch_watchman {
-	my $o = watchman_query();
-	if (is_work_tree_watched($o)) {
-		output_result($o->{clock}, @{$o->{files}});
-	}
-}
+  if (!user) return <p className="text-center py-10">No hay sesión activa</p>;
 
-sub output_result {
-	my ($clockid, @files) = @_;
+  return (
+    <div className="max-w-md mx-auto mt-10 bg-white rounded-lg shadow-md p-6">
+      <h1 className="text-2xl font-bold mb-4 text-blue-600">Editar perfil</h1>
 
-	# Uncomment for debugging watchman output
-	# open (my $fh, ">", ".git/watchman-output.out");
-	# binmode $fh, ":utf8";
-	# print $fh "$clockid\n@files\n";
-	# close $fh;
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Teléfono */}
+        <div>
+            <label className="block font-semibold mb-1">Teléfono actual</label>
+            <input
+                type="tel"
+                inputMode="numeric" // fuerza teclado numérico en móviles
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                className="w-full border p-2 rounded"
+                placeholder="No registrado"
+            />
+            {errors.phone && <p className="text-red-600 text-sm mt-1">{errors.phone}</p>}
+        </div>
 
-	binmode STDOUT, ":utf8";
-	print $clockid;
-	print "\0";
-	local $, = "\0";
-	print @files;
-}
 
-sub watchman_clock {
-	my $response = qx/watchman clock "$git_work_tree"/;
-	die "Failed to get clock id on '$git_work_tree'.\n" .
-		"Falling back to scanning...\n" if $? != 0;
+        {/* Contraseña con toggle */}
+        <div>
+          <label className="block font-semibold mb-1">Nueva contraseña</label>
+          <div className="flex items-center border rounded">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="flex-1 p-2 rounded-l"
+              placeholder="Escribe nueva contraseña"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="px-3 text-sm bg-gray-200 hover:bg-gray-300 rounded-r"
+            >
+              {showPassword ? "🙈 Ocultar" : "👁️ Mostrar"}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Por seguridad no mostramos tu contraseña actual. Si quieres cambiarla, escribe una nueva aquí.
+          </p>
+          {errors.password && <p className="text-red-600 text-sm mt-1">{errors.password}</p>}
+        </div>
 
-	return $json_pkg->new->utf8->decode($response);
-}
+        <button
+          type="submit"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
+        >
+          Guardar cambios
+        </button>
+      </form>
 
-sub watchman_query {
-	my $pid = open2(\*CHLD_OUT, \*CHLD_IN, 'watchman -j --no-pretty')
-	or die "open2() failed: $!\n" .
-	"Falling back to scanning...\n";
-
-	# In the query expression below we're asking for names of files that
-	# changed since $last_update_token but not from the .git folder.
-	#
-	# To accomplish this, we're using the "since" generator to use the
-	# recency index to select candidate nodes and "fields" to limit the
-	# output to file names only. Then we're using the "expression" term to
-	# further constrain the results.
-	my $last_update_line = "";
-	if (substr($last_update_token, 0, 1) eq "c") {
-		$last_update_token = "\"$last_update_token\"";
-		$last_update_line = qq[\n"since": $last_update_token,];
-	}
-	my $query = <<"	END";
-		["query", "$git_work_tree", {$last_update_line
-			"fields": ["name"],
-			"expression": ["not", ["dirname", ".git"]]
-		}]
-	END
-
-	# Uncomment for debugging the watchman query
-	# open (my $fh, ">", ".git/watchman-query.json");
-	# print $fh $query;
-	# close $fh;
-
-	print CHLD_IN $query;
-	close CHLD_IN;
-	my $response = do {local $/; <CHLD_OUT>};
-
-	# Uncomment for debugging the watch response
-	# open ($fh, ">", ".git/watchman-response.json");
-	# print $fh $response;
-	# close $fh;
-
-	die "Watchman: command returned no output.\n" .
-	"Falling back to scanning...\n" if $response eq "";
-	die "Watchman: command returned invalid output: $response\n" .
-	"Falling back to scanning...\n" unless $response =~ /^\{/;
-
-	return $json_pkg->new->utf8->decode($response);
-}
-
-sub is_work_tree_watched {
-	my ($output) = @_;
-	my $error = $output->{error};
-	if ($retry > 0 and $error and $error =~ m/unable to resolve root .* directory (.*) is not watched/) {
-		$retry--;
-		my $response = qx/watchman watch "$git_work_tree"/;
-		die "Failed to make watchman watch '$git_work_tree'.\n" .
-		    "Falling back to scanning...\n" if $? != 0;
-		$output = $json_pkg->new->utf8->decode($response);
-		$error = $output->{error};
-		die "Watchman: $error.\n" .
-		"Falling back to scanning...\n" if $error;
-
-		# Uncomment for debugging watchman output
-		# open (my $fh, ">", ".git/watchman-output.out");
-		# close $fh;
-
-		# Watchman will always return all files on the first query so
-		# return the fast "everything is dirty" flag to git and do the
-		# Watchman query just to get it over with now so we won't pay
-		# the cost in git to look up each individual file.
-		my $o = watchman_clock();
-		$error = $output->{error};
-
-		die "Watchman: $error.\n" .
-		"Falling back to scanning...\n" if $error;
-
-		output_result($o->{clock}, ("/"));
-		$last_update_token = $o->{clock};
-
-		eval { launch_watchman() };
-		return 0;
-	}
-
-	die "Watchman: $error.\n" .
-	"Falling back to scanning...\n" if $error;
-
-	return 1;
-}
-
-sub get_working_dir {
-	my $working_dir;
-	if ($^O =~ 'msys' || $^O =~ 'cygwin') {
-		$working_dir = Win32::GetCwd();
-		$working_dir =~ tr/\\/\//;
-	} else {
-		require Cwd;
-		$working_dir = Cwd::cwd();
-	}
-
-	return $working_dir;
+      {message && <p className="mt-4 text-center">{message}</p>}
+    </div>
+  );
 }
 </file>
 
-<file path="backend/.git/hooks/post-update.sample">
-#!/bin/sh
-#
-# An example hook script to prepare a packed repository for use over
-# dumb transports.
-#
-# To enable this hook, rename this file to "post-update".
+<file path="frontend/app/profile/page.tsx">
+"use client";
 
-exec git update-server-info
+import { useAuth } from "../../hooks/useAuth";
+import Link from "next/link";
+
+export default function ProfilePage() {
+  const { user, loading } = useAuth();
+
+  if (loading) return <p className="text-center py-10">Cargando perfil...</p>;
+  if (!user) return <p className="text-center py-10">No hay sesión activa</p>;
+
+  return (
+    <div className="max-w-lg mx-auto mt-10 bg-white rounded-lg shadow-lg p-6">
+      {/* Header con avatar */}
+      <div className="flex items-center space-x-4 mb-6">
+        <img
+          src="https://ui-avatars.com/api/?name=User&background=0D8ABC&color=fff"
+          alt="Avatar"
+          className="w-16 h-16 rounded-full"
+        />
+        <div>
+          <h1 className="text-2xl font-bold text-blue-600">Perfil de usuario</h1>
+          <p className="text-gray-500 text-sm">
+            Cuenta creada: {new Date(user.created_at).toLocaleDateString()}
+          </p>
+        </div>
+      </div>
+
+      {/* Datos principales */}
+      <div className="space-y-3">
+        <p><span className="font-semibold">Email:</span> {user.email}</p>
+        <p><span className="font-semibold">Teléfono:</span> {user.phone || "No registrado"}</p>
+        <p>
+          <span className="font-semibold">Rol:</span>{" "}
+          <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-sm">
+            {user.role}
+          </span>
+        </p>
+      </div>
+
+      {/* Estados de verificación */}
+      <div className="mt-6 grid grid-cols-2 gap-4">
+        <div className="p-3 border rounded-md">
+          <p className="font-semibold">Email verificado</p>
+          {user.verified_email ? (
+            <span className="text-green-600">✅ Sí</span>
+          ) : (
+            <span className="text-red-600">❌ No</span>
+          )}
+        </div>
+        <div className="p-3 border rounded-md">
+          <p className="font-semibold">Identidad verificada</p>
+          {user.verified_id ? (
+            <span className="text-green-600">✅ Sí</span>
+          ) : (
+            <span className="text-red-600">❌ No</span>
+          )}
+        </div>
+      </div>
+
+      {/* Acciones */}
+      <div className="mt-6 flex justify-end space-x-3">
+        <Link
+          href="/profile/edit"
+          className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md"
+        >
+          ✏️ Editar perfil
+        </Link>
+        <button
+          className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+          onClick={() => alert("Funcionalidad de cambio de contraseña en construcción")}
+        >
+          🔒 Cambiar contraseña
+        </button>
+      </div>
+    </div>
+  );
+}
 </file>
 
-<file path="backend/.git/hooks/pre-applypatch.sample">
-#!/bin/sh
-#
-# An example hook script to verify what is about to be committed
-# by applypatch from an e-mail message.
-#
-# The hook should exit with non-zero status after issuing an
-# appropriate message if it wants to stop the commit.
-#
-# To enable this hook, rename this file to "pre-applypatch".
-
-. git-sh-setup
-precommit="$(git rev-parse --git-path hooks/pre-commit)"
-test -x "$precommit" && exec "$precommit" ${1+"$@"}
-:
+<file path="frontend/components/Loader.tsx">
+export default function Loader() {
+  return (
+    <div className="flex justify-center items-center h-screen">
+      <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-600"></div>
+    </div>
+  );
+}
 </file>
 
-<file path="backend/.git/hooks/pre-commit.sample">
-#!/bin/sh
-#
-# An example hook script to verify what is about to be committed.
-# Called by "git commit" with no arguments.  The hook should
-# exit with non-zero status after issuing an appropriate message if
-# it wants to stop the commit.
-#
-# To enable this hook, rename this file to "pre-commit".
+<file path="frontend/components/LoginPage.tsx">
+"use client";
 
-if git rev-parse --verify HEAD >/dev/null 2>&1
-then
-	against=HEAD
-else
-	# Initial commit: diff against an empty tree object
-	against=$(git hash-object -t tree /dev/null)
-fi
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-# If you want to allow non-ASCII filenames set this variable to true.
-allownonascii=$(git config --type=bool hooks.allownonascii)
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-# Redirect output to stderr.
-exec 1>&2
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
 
-# Cross platform projects tend to avoid non-ASCII filenames; prevent
-# them from being added to the repository. We exploit the fact that the
-# printable range starts at the space character and ends with tilde.
-if [ "$allownonascii" != "true" ] &&
-	# Note that the use of brackets around a tr range is ok here, (it's
-	# even required, for portability to Solaris 10's /usr/bin/tr), since
-	# the square bracket bytes happen to fall in the designated range.
-	test $(git diff --cached --name-only --diff-filter=A -z $against |
-	  LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0
-then
-	cat <<\EOF
-Error: Attempt to add a non-ASCII file name.
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
 
-This can cause problems if you want to work with people on other platforms.
+    if (res.ok) {
+      const data = await res.json();
+      localStorage.setItem("token", data.token); // 🔹 guardar token
+      router.push("/listings"); // 🔹 redirigir al listado
+    } else {
+      const err = await res.json();
+      setError(err.error || "Error al iniciar sesión");
+    }
+  }
 
-To be portable it is advisable to rename the file.
+  return (
+    <div className="max-w-md mx-auto mt-20 bg-white p-6 rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold mb-4">Iniciar sesión</h1>
 
-If you know what you are doing you can disable this check using:
+      {error && <p className="text-red-600 mb-3">{error}</p>}
 
-  git config hooks.allownonascii true
-EOF
-	exit 1
-fi
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+            required
+          />
+        </div>
 
-# If there are whitespace errors, print the offending file names and fail.
-exec git diff-index --check --cached $against --
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+            required
+          />
+        </div>
+
+        <button
+          type="submit"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md"
+        >
+          Entrar
+        </button>
+      </form>
+    </div>
+  );
+}
 </file>
 
-<file path="backend/.git/hooks/pre-merge-commit.sample">
-#!/bin/sh
-#
-# An example hook script to verify what is about to be committed.
-# Called by "git merge" with no arguments.  The hook should
-# exit with non-zero status after issuing an appropriate message to
-# stderr if it wants to stop the merge commit.
-#
-# To enable this hook, rename this file to "pre-merge-commit".
+<file path="frontend/context/AuthContext.tsx">
+"use client";
 
-. git-sh-setup
-test -x "$GIT_DIR/hooks/pre-commit" &&
-        exec "$GIT_DIR/hooks/pre-commit"
-:
-</file>
+import { createContext, useContext, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-<file path="backend/.git/hooks/pre-push.sample">
-#!/bin/sh
+const AuthContext = createContext<any>(null);
 
-# An example hook script to verify what is about to be pushed.  Called by "git
-# push" after it has checked the remote status, but before anything has been
-# pushed.  If this script exits with a non-zero status nothing will be pushed.
-#
-# This hook is called with the following parameters:
-#
-# $1 -- Name of the remote to which the push is being done
-# $2 -- URL to which the push is being done
-#
-# If pushing without using a named remote those arguments will be equal.
-#
-# Information about the commits which are being pushed is supplied as lines to
-# the standard input in the form:
-#
-#   <local ref> <local oid> <remote ref> <remote oid>
-#
-# This sample shows how to prevent push of commits where the log message starts
-# with "WIP" (work in progress).
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
-remote="$1"
-url="$2"
+  useEffect(() => {
+    const storedToken = localStorage.getItem("token");
+    if (storedToken) {
+      setToken(storedToken);
+    } else {
+      setLoading(false);
+    }
+  }, []);
 
-zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+  useEffect(() => {
+    if (token) {
+      fetchProfile(token);
+    }
+  }, [token]);
 
-while read local_ref local_oid remote_ref remote_oid
-do
-	if test "$local_oid" = "$zero"
-	then
-		# Handle delete
-		:
-	else
-		if test "$remote_oid" = "$zero"
-		then
-			# New branch, examine all commits
-			range="$local_oid"
-		else
-			# Update to existing branch, examine new commits
-			range="$remote_oid..$local_oid"
-		fi
+  async function fetchProfile(t: string) {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data.user);
+      } else {
+        setUser(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-		# Check for WIP commit
-		commit=$(git rev-list -n 1 --grep '^WIP' "$range")
-		if test -n "$commit"
-		then
-			echo >&2 "Found WIP commit in $local_ref, not pushing"
-			exit 1
-		fi
-	fi
-done
+  async function login(email: string, password: string) {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
 
-exit 0
-</file>
+    if (res.ok) {
+      const data = await res.json();
 
-<file path="backend/.git/hooks/pre-rebase.sample">
-#!/bin/sh
-#
-# Copyright (c) 2006, 2008 Junio C Hamano
-#
-# The "pre-rebase" hook is run just before "git rebase" starts doing
-# its job, and can prevent the command from running by exiting with
-# non-zero status.
-#
-# The hook is called with the following parameters:
-#
-# $1 -- the upstream the series was forked from.
-# $2 -- the branch being rebased (or empty when rebasing the current branch).
-#
-# This sample shows how to prevent topic branches that are already
-# merged to 'next' branch from getting rebased, because allowing it
-# would result in rebasing already published history.
+      // ✅ Guardar token
+      localStorage.setItem("token", data.token);
+      setToken(data.token);
 
-publish=next
-basebranch="$1"
-if test "$#" = 2
-then
-	topic="refs/heads/$2"
-else
-	topic=`git symbolic-ref HEAD` ||
-	exit 0 ;# we do not interrupt rebasing detached HEAD
-fi
+      // ✅ Actualizar usuario inmediatamente
+      setUser(data.user);
+      setLoading(false);
 
-case "$topic" in
-refs/heads/??/*)
-	;;
-*)
-	exit 0 ;# we do not interrupt others.
-	;;
-esac
+      // ✅ Redirigir
+      router.push("/listings");
+    } else {
+      setUser(null);
+      setToken(null);
+      setLoading(false);
+    }
+  }
 
-# Now we are dealing with a topic branch being rebased
-# on top of master.  Is it OK to rebase it?
 
-# Does the topic really exist?
-git show-ref -q "$topic" || {
-	echo >&2 "No such branch $topic"
-	exit 1
+  function logout() {
+    localStorage.removeItem("token");
+    setUser(null);
+    setToken(null);
+    setLoading(false);
+    router.push("/login");
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-# Is topic fully merged to master?
-not_in_master=`git rev-list --pretty=oneline ^master "$topic"`
-if test -z "$not_in_master"
-then
-	echo >&2 "$topic is fully merged to master; better remove it."
-	exit 1 ;# we could allow it, but there is no point.
-fi
-
-# Is topic ever merged to next?  If so you should not be rebasing it.
-only_next_1=`git rev-list ^master "^$topic" ${publish} | sort`
-only_next_2=`git rev-list ^master           ${publish} | sort`
-if test "$only_next_1" = "$only_next_2"
-then
-	not_in_topic=`git rev-list "^$topic" master`
-	if test -z "$not_in_topic"
-	then
-		echo >&2 "$topic is already up to date with master"
-		exit 1 ;# we could allow it, but there is no point.
-	else
-		exit 0
-	fi
-else
-	not_in_next=`git rev-list --pretty=oneline ^${publish} "$topic"`
-	/usr/bin/perl -e '
-		my $topic = $ARGV[0];
-		my $msg = "* $topic has commits already merged to public branch:\n";
-		my (%not_in_next) = map {
-			/^([0-9a-f]+) /;
-			($1 => 1);
-		} split(/\n/, $ARGV[1]);
-		for my $elem (map {
-				/^([0-9a-f]+) (.*)$/;
-				[$1 => $2];
-			} split(/\n/, $ARGV[2])) {
-			if (!exists $not_in_next{$elem->[0]}) {
-				if ($msg) {
-					print STDERR $msg;
-					undef $msg;
-				}
-				print STDERR " $elem->[1]\n";
-			}
-		}
-	' "$topic" "$not_in_next" "$not_in_master"
-	exit 1
-fi
-
-<<\DOC_END
-
-This sample hook safeguards topic branches that have been
-published from being rewound.
-
-The workflow assumed here is:
-
- * Once a topic branch forks from "master", "master" is never
-   merged into it again (either directly or indirectly).
-
- * Once a topic branch is fully cooked and merged into "master",
-   it is deleted.  If you need to build on top of it to correct
-   earlier mistakes, a new topic branch is created by forking at
-   the tip of the "master".  This is not strictly necessary, but
-   it makes it easier to keep your history simple.
-
- * Whenever you need to test or publish your changes to topic
-   branches, merge them into "next" branch.
-
-The script, being an example, hardcodes the publish branch name
-to be "next", but it is trivial to make it configurable via
-$GIT_DIR/config mechanism.
-
-With this workflow, you would want to know:
-
-(1) ... if a topic branch has ever been merged to "next".  Young
-    topic branches can have stupid mistakes you would rather
-    clean up before publishing, and things that have not been
-    merged into other branches can be easily rebased without
-    affecting other people.  But once it is published, you would
-    not want to rewind it.
-
-(2) ... if a topic branch has been fully merged to "master".
-    Then you can delete it.  More importantly, you should not
-    build on top of it -- other people may already want to
-    change things related to the topic as patches against your
-    "master", so if you need further changes, it is better to
-    fork the topic (perhaps with the same name) afresh from the
-    tip of "master".
-
-Let's look at this example:
-
-		   o---o---o---o---o---o---o---o---o---o "next"
-		  /       /           /           /
-		 /   a---a---b A     /           /
-		/   /               /           /
-	       /   /   c---c---c---c B         /
-	      /   /   /             \         /
-	     /   /   /   b---b C     \       /
-	    /   /   /   /             \     /
-    ---o---o---o---o---o---o---o---o---o---o---o "master"
-
-
-A, B and C are topic branches.
-
- * A has one fix since it was merged up to "next".
-
- * B has finished.  It has been fully merged up to "master" and "next",
-   and is ready to be deleted.
-
- * C has not merged to "next" at all.
-
-We would want to allow C to be rebased, refuse A, and encourage
-B to be deleted.
-
-To compute (1):
-
-	git rev-list ^master ^topic next
-	git rev-list ^master        next
-
-	if these match, topic has not merged in next at all.
-
-To compute (2):
-
-	git rev-list master..topic
-
-	if this is empty, it is fully merged to "master".
-
-DOC_END
-</file>
-
-<file path="backend/.git/hooks/pre-receive.sample">
-#!/bin/sh
-#
-# An example hook script to make use of push options.
-# The example simply echoes all push options that start with 'echoback='
-# and rejects all pushes when the "reject" push option is used.
-#
-# To enable this hook, rename this file to "pre-receive".
-
-if test -n "$GIT_PUSH_OPTION_COUNT"
-then
-	i=0
-	while test "$i" -lt "$GIT_PUSH_OPTION_COUNT"
-	do
-		eval "value=\$GIT_PUSH_OPTION_$i"
-		case "$value" in
-		echoback=*)
-			echo "echo from the pre-receive-hook: ${value#*=}" >&2
-			;;
-		reject)
-			exit 1
-		esac
-		i=$((i + 1))
-	done
-fi
-</file>
-
-<file path="backend/.git/hooks/prepare-commit-msg.sample">
-#!/bin/sh
-#
-# An example hook script to prepare the commit log message.
-# Called by "git commit" with the name of the file that has the
-# commit message, followed by the description of the commit
-# message's source.  The hook's purpose is to edit the commit
-# message file.  If the hook fails with a non-zero status,
-# the commit is aborted.
-#
-# To enable this hook, rename this file to "prepare-commit-msg".
-
-# This hook includes three examples. The first one removes the
-# "# Please enter the commit message..." help message.
-#
-# The second includes the output of "git diff --name-status -r"
-# into the message, just before the "git status" output.  It is
-# commented because it doesn't cope with --amend or with squashed
-# commits.
-#
-# The third example adds a Signed-off-by line to the message, that can
-# still be edited.  This is rarely a good idea.
-
-COMMIT_MSG_FILE=$1
-COMMIT_SOURCE=$2
-SHA1=$3
-
-/usr/bin/perl -i.bak -ne 'print unless(m/^. Please enter the commit message/..m/^#$/)' "$COMMIT_MSG_FILE"
-
-# case "$COMMIT_SOURCE,$SHA1" in
-#  ,|template,)
-#    /usr/bin/perl -i.bak -pe '
-#       print "\n" . `git diff --cached --name-status -r`
-# 	 if /^#/ && $first++ == 0' "$COMMIT_MSG_FILE" ;;
-#  *) ;;
-# esac
-
-# SOB=$(git var GIT_COMMITTER_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
-# git interpret-trailers --in-place --trailer "$SOB" "$COMMIT_MSG_FILE"
-# if test -z "$COMMIT_SOURCE"
-# then
-#   /usr/bin/perl -i.bak -pe 'print "\n" if !$first_line++' "$COMMIT_MSG_FILE"
-# fi
-</file>
-
-<file path="backend/.git/hooks/push-to-checkout.sample">
-#!/bin/sh
-
-# An example hook script to update a checked-out tree on a git push.
-#
-# This hook is invoked by git-receive-pack(1) when it reacts to git
-# push and updates reference(s) in its repository, and when the push
-# tries to update the branch that is currently checked out and the
-# receive.denyCurrentBranch configuration variable is set to
-# updateInstead.
-#
-# By default, such a push is refused if the working tree and the index
-# of the remote repository has any difference from the currently
-# checked out commit; when both the working tree and the index match
-# the current commit, they are updated to match the newly pushed tip
-# of the branch. This hook is to be used to override the default
-# behaviour; however the code below reimplements the default behaviour
-# as a starting point for convenient modification.
-#
-# The hook receives the commit with which the tip of the current
-# branch is going to be updated:
-commit=$1
-
-# It can exit with a non-zero status to refuse the push (when it does
-# so, it must not modify the index or the working tree).
-die () {
-	echo >&2 "$*"
-	exit 1
+// 👇 ESTA exportación es la que faltaba
+export function useAuth() {
+  return useContext(AuthContext);
 }
-
-# Or it can make any necessary changes to the working tree and to the
-# index to bring them to the desired state when the tip of the current
-# branch is updated to the new commit, and exit with a zero status.
-#
-# For example, the hook can simply run git read-tree -u -m HEAD "$1"
-# in order to emulate git fetch that is run in the reverse direction
-# with git push, as the two-tree form of git read-tree -u -m is
-# essentially the same as git switch or git checkout that switches
-# branches while keeping the local changes in the working tree that do
-# not interfere with the difference between the branches.
-
-# The below is a more-or-less exact translation to shell of the C code
-# for the default behaviour for git's push-to-checkout hook defined in
-# the push_to_deploy() function in builtin/receive-pack.c.
-#
-# Note that the hook will be executed from the repository directory,
-# not from the working tree, so if you want to perform operations on
-# the working tree, you will have to adapt your code accordingly, e.g.
-# by adding "cd .." or using relative paths.
-
-if ! git update-index -q --ignore-submodules --refresh
-then
-	die "Up-to-date check failed"
-fi
-
-if ! git diff-files --quiet --ignore-submodules --
-then
-	die "Working directory has unstaged changes"
-fi
-
-# This is a rough translation of:
-#
-#   head_has_history() ? "HEAD" : EMPTY_TREE_SHA1_HEX
-if git cat-file -e HEAD 2>/dev/null
-then
-	head=HEAD
-else
-	head=$(git hash-object -t tree --stdin </dev/null)
-fi
-
-if ! git diff-index --quiet --cached --ignore-submodules $head --
-then
-	die "Working directory has staged changes"
-fi
-
-if ! git read-tree -u -m "$commit"
-then
-	die "Could not update working tree to new HEAD"
-fi
 </file>
 
-<file path="backend/.git/hooks/sendemail-validate.sample">
-#!/bin/sh
+<file path="frontend/hooks/useAuth.ts">
+"use client";
 
-# An example hook script to validate a patch (and/or patch series) before
-# sending it via email.
-#
-# The hook should exit with non-zero status after issuing an appropriate
-# message if it wants to prevent the email(s) from being sent.
-#
-# To enable this hook, rename this file to "sendemail-validate".
-#
-# By default, it will only check that the patch(es) can be applied on top of
-# the default upstream branch without conflicts in a secondary worktree. After
-# validation (successful or not) of the last patch of a series, the worktree
-# will be deleted.
-#
-# The following config variables can be set to change the default remote and
-# remote ref that are used to apply the patches against:
-#
-#   sendemail.validateRemote (default: origin)
-#   sendemail.validateRemoteRef (default: HEAD)
-#
-# Replace the TODO placeholders with appropriate checks according to your
-# needs.
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-validate_cover_letter () {
-	file="$1"
-	# TODO: Replace with appropriate checks (e.g. spell checking).
-	true
+export function useAuth() {
+  const router = useRouter();
+  const [token, setToken] = useState<string | null>(
+    typeof window !== "undefined" ? localStorage.getItem("token") : null
+  );
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // cargar perfil si hay token
+  useEffect(() => {
+    async function fetchProfile() {
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data.user);
+        } else {
+          logout();
+        }
+      } catch (err) {
+        console.error("Error al cargar perfil", err);
+        logout();
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProfile();
+  }, [token]);
+
+  function saveToken(newToken: string) {
+    localStorage.setItem("token", newToken);
+    setToken(newToken);
+  }
+
+  function logout() {
+    localStorage.removeItem("token");
+    setToken(null);
+    setUser(null);
+    setLoading(false); 
+    router.push("/login");
+  }
+
+  return { token, user, loading, saveToken, logout };
 }
-
-validate_patch () {
-	file="$1"
-	# Ensure that the patch applies without conflicts.
-	git am -3 "$file" || return
-	# TODO: Replace with appropriate checks for this patch
-	# (e.g. checkpatch.pl).
-	true
-}
-
-validate_series () {
-	# TODO: Replace with appropriate checks for the whole series
-	# (e.g. quick build, coding style checks, etc.).
-	true
-}
-
-# main -------------------------------------------------------------------------
-
-if test "$GIT_SENDEMAIL_FILE_COUNTER" = 1
-then
-	remote=$(git config --default origin --get sendemail.validateRemote) &&
-	ref=$(git config --default HEAD --get sendemail.validateRemoteRef) &&
-	worktree=$(mktemp --tmpdir -d sendemail-validate.XXXXXXX) &&
-	git worktree add -fd --checkout "$worktree" "refs/remotes/$remote/$ref" &&
-	git config --replace-all sendemail.validateWorktree "$worktree"
-else
-	worktree=$(git config --get sendemail.validateWorktree)
-fi || {
-	echo "sendemail-validate: error: failed to prepare worktree" >&2
-	exit 1
-}
-
-unset GIT_DIR GIT_WORK_TREE
-cd "$worktree" &&
-
-if grep -q "^diff --git " "$1"
-then
-	validate_patch "$1"
-else
-	validate_cover_letter "$1"
-fi &&
-
-if test "$GIT_SENDEMAIL_FILE_COUNTER" = "$GIT_SENDEMAIL_FILE_TOTAL"
-then
-	git config --unset-all sendemail.validateWorktree &&
-	trap 'git worktree remove -ff "$worktree"' EXIT &&
-	validate_series
-fi
-</file>
-
-<file path="backend/.git/hooks/update.sample">
-#!/bin/sh
-#
-# An example hook script to block unannotated tags from entering.
-# Called by "git receive-pack" with arguments: refname sha1-old sha1-new
-#
-# To enable this hook, rename this file to "update".
-#
-# Config
-# ------
-# hooks.allowunannotated
-#   This boolean sets whether unannotated tags will be allowed into the
-#   repository.  By default they won't be.
-# hooks.allowdeletetag
-#   This boolean sets whether deleting tags will be allowed in the
-#   repository.  By default they won't be.
-# hooks.allowmodifytag
-#   This boolean sets whether a tag may be modified after creation. By default
-#   it won't be.
-# hooks.allowdeletebranch
-#   This boolean sets whether deleting branches will be allowed in the
-#   repository.  By default they won't be.
-# hooks.denycreatebranch
-#   This boolean sets whether remotely creating branches will be denied
-#   in the repository.  By default this is allowed.
-#
-
-# --- Command line
-refname="$1"
-oldrev="$2"
-newrev="$3"
-
-# --- Safety check
-if [ -z "$GIT_DIR" ]; then
-	echo "Don't run this script from the command line." >&2
-	echo " (if you want, you could supply GIT_DIR then run" >&2
-	echo "  $0 <ref> <oldrev> <newrev>)" >&2
-	exit 1
-fi
-
-if [ -z "$refname" -o -z "$oldrev" -o -z "$newrev" ]; then
-	echo "usage: $0 <ref> <oldrev> <newrev>" >&2
-	exit 1
-fi
-
-# --- Config
-allowunannotated=$(git config --type=bool hooks.allowunannotated)
-allowdeletebranch=$(git config --type=bool hooks.allowdeletebranch)
-denycreatebranch=$(git config --type=bool hooks.denycreatebranch)
-allowdeletetag=$(git config --type=bool hooks.allowdeletetag)
-allowmodifytag=$(git config --type=bool hooks.allowmodifytag)
-
-# check for no description
-projectdesc=$(sed -e '1q' "$GIT_DIR/description")
-case "$projectdesc" in
-"Unnamed repository"* | "")
-	echo "*** Project description file hasn't been set" >&2
-	exit 1
-	;;
-esac
-
-# --- Check types
-# if $newrev is 0000...0000, it's a commit to delete a ref.
-zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
-if [ "$newrev" = "$zero" ]; then
-	newrev_type=delete
-else
-	newrev_type=$(git cat-file -t $newrev)
-fi
-
-case "$refname","$newrev_type" in
-	refs/tags/*,commit)
-		# un-annotated tag
-		short_refname=${refname##refs/tags/}
-		if [ "$allowunannotated" != "true" ]; then
-			echo "*** The un-annotated tag, $short_refname, is not allowed in this repository" >&2
-			echo "*** Use 'git tag [ -a | -s ]' for tags you want to propagate." >&2
-			exit 1
-		fi
-		;;
-	refs/tags/*,delete)
-		# delete tag
-		if [ "$allowdeletetag" != "true" ]; then
-			echo "*** Deleting a tag is not allowed in this repository" >&2
-			exit 1
-		fi
-		;;
-	refs/tags/*,tag)
-		# annotated tag
-		if [ "$allowmodifytag" != "true" ] && git rev-parse $refname > /dev/null 2>&1
-		then
-			echo "*** Tag '$refname' already exists." >&2
-			echo "*** Modifying a tag is not allowed in this repository." >&2
-			exit 1
-		fi
-		;;
-	refs/heads/*,commit)
-		# branch
-		if [ "$oldrev" = "$zero" -a "$denycreatebranch" = "true" ]; then
-			echo "*** Creating a branch is not allowed in this repository" >&2
-			exit 1
-		fi
-		;;
-	refs/heads/*,delete)
-		# delete branch
-		if [ "$allowdeletebranch" != "true" ]; then
-			echo "*** Deleting a branch is not allowed in this repository" >&2
-			exit 1
-		fi
-		;;
-	refs/remotes/*,commit)
-		# tracking branch
-		;;
-	refs/remotes/*,delete)
-		# delete tracking branch
-		if [ "$allowdeletebranch" != "true" ]; then
-			echo "*** Deleting a tracking branch is not allowed in this repository" >&2
-			exit 1
-		fi
-		;;
-	*)
-		# Anything else (is there anything else?)
-		echo "*** Update hook: unknown type of update to ref $refname of type $newrev_type" >&2
-		exit 1
-		;;
-esac
-
-# --- Finished
-exit 0
-</file>
-
-<file path="backend/.git/info/exclude">
-# git ls-files --others --exclude-from=.git/info/exclude
-# Lines that start with '#' are comments.
-# For a project mostly in C, the following would be a good set of
-# exclude patterns (uncomment them if you want to use them):
-# *.[oa]
-# *~
-</file>
-
-<file path="backend/.git/config">
-[core]
-	repositoryformatversion = 0
-	filemode = true
-	bare = false
-	logallrefupdates = true
-</file>
-
-<file path="backend/.git/description">
-Unnamed repository; edit this file 'description' to name the repository.
-</file>
-
-<file path="backend/.git/HEAD">
-ref: refs/heads/main
 </file>
 
 <file path="backend/.github/dependabot.yml">
@@ -1200,12 +794,97 @@ class Api::V1::AuthController < ApplicationController
 end
 </file>
 
+<file path="backend/app/controllers/api/v1/listings_controller.rb">
+class Api::V1::ListingsController < ApplicationController
+  before_action :authorize_request, only: [:create, :update, :destroy]
+  before_action :set_listing, only: [:show, :update, :destroy]
+
+  def index
+    render json: Listing.all
+  end
+
+  def show
+    render json: Listing.find(params[:id])
+  end
+
+  def create
+    listing = @current_user.listings.build(listing_params)
+    if listing.save
+      render json: listing, status: :created
+    else
+      render json: { errors: listing.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
+  def update
+    @listing = Listing.find(params[:id])
+
+    if @listing.update(listing_params)
+      # Manejo de fotos existentes
+      if params[:existing_photos]
+        # Mantener solo las fotos que quedaron
+        @listing.photos.each do |photo|
+          unless params[:existing_photos].include?(photo.blob.id.to_s)
+            photo.purge # elimina la foto de ActiveStorage
+          end
+        end
+      else
+        # Si no mandaron existing_photos, eliminamos todas
+        @listing.photos.purge
+      end
+
+      # Agregar fotos nuevas
+      if params[:listing][:photos]
+        params[:listing][:photos].each do |photo|
+          @listing.photos.attach(photo)
+        end
+      end
+
+      render json: @listing
+    else
+      render json: @listing.errors, status: :unprocessable_entity
+    end
+  end
+
+  def destroy
+    if @listing.user == @current_user
+      @listing.destroy
+      head :no_content
+    else
+      render json: { errors: "No autorizado" }, status: :forbidden
+    end
+  end
+
+  private
+
+  def set_listing
+    @listing = Listing.find(params[:id])
+  end
+
+  def listing_params
+    params.require(:listing).permit(
+      :title, :description, :price,
+      :address_text, :comuna,
+      :gastos_incluidos, :lat, :lng, photos: []
+    )
+  end
+end
+</file>
+
 <file path="backend/app/controllers/api/v1/users_controller.rb">
 class Api::V1::UsersController < ApplicationController
   before_action :authorize_request
 
   def profile
     render json: { user: @current_user }, status: :ok
+  end
+
+  def update
+    if @current_user.update(user_params)
+      render json: { user: @current_user }, status: :ok
+    else
+      render json: { errors: @current_user.errors.full_messages }, status: :unprocessable_entity
+    end
   end
 
   private
@@ -1222,6 +901,10 @@ class Api::V1::UsersController < ApplicationController
       render json: { errors: e.message }, status: :unauthorized
     end
   end
+
+  def user_params
+    params.permit(:phone, :password, :password_confirmation)
+  end
 end
 </file>
 
@@ -1231,6 +914,18 @@ end
 
 <file path="backend/app/controllers/application_controller.rb">
 class ApplicationController < ActionController::API
+  def authorize_request
+    header = request.headers['Authorization']
+    header = header.split(' ').last if header
+    begin
+      decoded = JsonWebToken.decode(header)
+      @current_user = User.find(decoded[:user_id])
+    rescue ActiveRecord::RecordNotFound => e
+      render json: { errors: e.message }, status: :unauthorized
+    rescue JWT::DecodeError => e
+      render json: { errors: e.message }, status: :unauthorized
+    end
+  end
 end
 </file>
 
@@ -1241,6 +936,26 @@ class ApplicationJob < ActiveJob::Base
 
   # Most jobs are safe to ignore if the underlying records are no longer available
   # discard_on ActiveJob::DeserializationError
+end
+</file>
+
+<file path="backend/app/lib/json_web_token.rb">
+require 'jwt'
+
+class JsonWebToken
+  SECRET_KEY = ENV['JWT_SECRET'] || Rails.application.secret_key_base
+
+  def self.encode(payload, exp = 24.hours.from_now)
+    payload[:exp] = exp.to_i
+    JWT.encode(payload, SECRET_KEY, 'HS256')
+  end
+
+  def self.decode(token)
+    decoded = JWT.decode(token, SECRET_KEY, true, algorithm: 'HS256')[0]
+    HashWithIndifferentAccess.new(decoded)
+  rescue JWT::DecodeError => e
+    raise e
+  end
 end
 </file>
 
@@ -1261,10 +976,52 @@ class ApplicationRecord < ActiveRecord::Base
 end
 </file>
 
+<file path="backend/app/models/listing.rb">
+class Listing < ApplicationRecord
+  belongs_to :user
+  has_many_attached :photos
+  validates :title, :description, :price, presence: true
+end
+</file>
+
 <file path="backend/app/models/user.rb">
 class User < ApplicationRecord
   has_secure_password
+  has_many :listings, dependent: :destroy
   validates :email, presence: true, uniqueness: true
+end
+</file>
+
+<file path="backend/app/serializers/listing_serializer.rb">
+class ListingSerializer < ActiveModel::Serializer
+  attributes :id, :title, :description, :price, :address_text, :comuna, :gastos_incluidos, :created_at, :updated_at
+
+  has_many :photos, serializer: PhotoSerializer
+  
+  belongs_to :user
+end
+</file>
+
+<file path="backend/app/serializers/photo_serializer.rb">
+# app/serializers/photo_serializer.rb
+class PhotoSerializer < ActiveModel::Serializer
+  include Rails.application.routes.url_helpers
+
+  attributes :id, :url
+
+  def id
+    object.blob.id
+  end
+
+  def url
+    Rails.application.routes.url_helpers.url_for(object)
+  end
+end
+</file>
+
+<file path="backend/app/serializers/user_serializer.rb">
+class UserSerializer < ActiveModel::Serializer
+  attributes :id, :email
 end
 </file>
 
@@ -1444,8 +1201,11 @@ Rails.application.configure do
   # Set localhost to be used by links generated in mailer templates.
   config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
 
+  Rails.application.routes.default_url_options = { host: "localhost", port: 3000 }
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
+
+  config.logger   = ActiveSupport::TaggedLogging.logger(STDOUT)
 
   # Raise an error on page load if there are pending migrations.
   config.active_record.migration_error = :page_load
@@ -1739,6 +1499,8 @@ module Backend
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
 
+    config.autoload_paths << Rails.root.join('app/lib')
+
     config.middleware.insert_before 0, Rack::Cors do
       allow do
         origins '*'
@@ -1775,32 +1537,6 @@ production:
   adapter: redis
   url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>
   channel_prefix: backend_production
-</file>
-
-<file path="backend/config/ci.rb">
-# Run using bin/ci
-
-CI.run do
-  step "Setup", "bin/setup --skip-server"
-
-  step "Style: Ruby", "bin/rubocop"
-
-  step "Security: Gem audit", "bin/bundler-audit"
-  step "Security: Brakeman code analysis", "bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error"
-  step "Tests: Rails", "bin/rails test"
-  step "Tests: Seeds", "env RAILS_ENV=test bin/rails db:seed:replant"
-
-  # Optional: Run system tests
-  # step "Tests: System", "bin/rails test:system"
-
-  # Optional: set a green GitHub commit status to unblock PR merge.
-  # Requires the `gh` CLI and `gh extension install basecamp/gh-signoff`.
-  # if success?
-  #   step "Signoff: All systems go. Ready for merge and deploy.", "gh signoff"
-  # else
-  #   failure "Signoff: CI failed. Do not merge or deploy.", "Fix the issues and try again."
-  # end
-end
 </file>
 
 <file path="backend/config/credentials.yml.enc">
@@ -1873,6 +1609,9 @@ Rails.application.routes.draw do
       post 'register', to: 'auth#register'
       post 'login', to: 'auth#login'
       get 'profile', to: 'users#profile'
+      put 'profile', to: 'users#update'
+
+      resources :listings, only: [:index, :show, :create, :update, :destroy]
     end
   end
 
@@ -1964,6 +1703,194 @@ class CreateUsersProfilesListings < ActiveRecord::Migration[7.0]
 end
 </file>
 
+<file path="backend/db/migrate/20260524021625_rename_encrypted_password_to_password_digest.rb">
+class RenameEncryptedPasswordToPasswordDigest < ActiveRecord::Migration[7.0]
+  def change
+    rename_column :users, :encrypted_password, :password_digest
+  end
+end
+</file>
+
+<file path="backend/db/migrate/20260524030553_add_user_id_to_listings.rb">
+class AddUserIdToListings < ActiveRecord::Migration[8.1]
+  def change
+    add_reference :listings, :user, null: false, foreign_key: true
+  end
+end
+</file>
+
+<file path="backend/db/migrate/20260524030814_remove_owner_id_from_listings.rb">
+class RemoveOwnerIdFromListings < ActiveRecord::Migration[8.1]
+  def change
+    remove_column :listings, :owner_id, :integer
+  end
+end
+</file>
+
+<file path="backend/db/migrate/20260524212938_create_active_storage_tables.active_storage.rb">
+# This migration comes from active_storage (originally 20170806125915)
+class CreateActiveStorageTables < ActiveRecord::Migration[7.0]
+  def change
+    # Use Active Record's configured type for primary and foreign keys
+    primary_key_type, foreign_key_type = primary_and_foreign_key_types
+
+    create_table :active_storage_blobs, id: primary_key_type do |t|
+      t.string   :key,          null: false
+      t.string   :filename,     null: false
+      t.string   :content_type
+      t.text     :metadata
+      t.string   :service_name, null: false
+      t.bigint   :byte_size,    null: false
+      t.string   :checksum
+
+      if connection.supports_datetime_with_precision?
+        t.datetime :created_at, precision: 6, null: false
+      else
+        t.datetime :created_at, null: false
+      end
+
+      t.index [ :key ], unique: true
+    end
+
+    create_table :active_storage_attachments, id: primary_key_type do |t|
+      t.string     :name,     null: false
+      t.references :record,   null: false, polymorphic: true, index: false, type: foreign_key_type
+      t.references :blob,     null: false, type: foreign_key_type
+
+      if connection.supports_datetime_with_precision?
+        t.datetime :created_at, precision: 6, null: false
+      else
+        t.datetime :created_at, null: false
+      end
+
+      t.index [ :record_type, :record_id, :name, :blob_id ], name: :index_active_storage_attachments_uniqueness, unique: true
+      t.foreign_key :active_storage_blobs, column: :blob_id
+    end
+
+    create_table :active_storage_variant_records, id: primary_key_type do |t|
+      t.belongs_to :blob, null: false, index: false, type: foreign_key_type
+      t.string :variation_digest, null: false
+
+      t.index [ :blob_id, :variation_digest ], name: :index_active_storage_variant_records_uniqueness, unique: true
+      t.foreign_key :active_storage_blobs, column: :blob_id
+    end
+  end
+
+  private
+    def primary_and_foreign_key_types
+      config = Rails.configuration.generators
+      setting = config.options[config.orm][:primary_key_type]
+      primary_key_type = setting || :primary_key
+      foreign_key_type = setting || :bigint
+      [ primary_key_type, foreign_key_type ]
+    end
+end
+</file>
+
+<file path="backend/db/schema.rb">
+# This file is auto-generated from the current state of the database. Instead
+# of editing this file, please use the migrations feature of Active Record to
+# incrementally modify your database, and then regenerate this schema definition.
+#
+# This file is the source Rails uses to define your schema when running `bin/rails
+# db:schema:load`. When creating a new database, `bin/rails db:schema:load` tends to
+# be faster and is potentially less error prone than running all of your
+# migrations from scratch. Old migrations may fail to apply correctly if those
+# migrations use external dependencies or application code.
+#
+# It's strongly recommended that you check this file into your version control system.
+
+ActiveRecord::Schema[8.1].define(version: 2026_05_24_212938) do
+  # These are extensions that must be enabled in order to support this database
+  enable_extension "pg_catalog.plpgsql"
+
+  create_table "active_storage_attachments", force: :cascade do |t|
+    t.bigint "blob_id", null: false
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.bigint "record_id", null: false
+    t.string "record_type", null: false
+    t.index ["blob_id"], name: "index_active_storage_attachments_on_blob_id"
+    t.index ["record_type", "record_id", "name", "blob_id"], name: "index_active_storage_attachments_uniqueness", unique: true
+  end
+
+  create_table "active_storage_blobs", force: :cascade do |t|
+    t.bigint "byte_size", null: false
+    t.string "checksum"
+    t.string "content_type"
+    t.datetime "created_at", null: false
+    t.string "filename", null: false
+    t.string "key", null: false
+    t.text "metadata"
+    t.string "service_name", null: false
+    t.index ["key"], name: "index_active_storage_blobs_on_key", unique: true
+  end
+
+  create_table "active_storage_variant_records", force: :cascade do |t|
+    t.bigint "blob_id", null: false
+    t.string "variation_digest", null: false
+    t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
+
+  create_table "listings", force: :cascade do |t|
+    t.string "address_text"
+    t.jsonb "availability", default: {}
+    t.string "comuna"
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.boolean "gastos_incluidos", default: false
+    t.float "lat"
+    t.float "lng"
+    t.jsonb "photos", default: []
+    t.integer "price"
+    t.jsonb "rules", default: {}
+    t.jsonb "services", default: {}
+    t.string "title"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id"], name: "index_listings_on_user_id"
+  end
+
+  create_table "profiles", force: :cascade do |t|
+    t.integer "age"
+    t.text "bio"
+    t.integer "budget_max"
+    t.integer "budget_min"
+    t.string "comuna"
+    t.datetime "created_at", null: false
+    t.jsonb "habits", default: {}
+    t.string "institution"
+    t.string "name"
+    t.string "occupation"
+    t.boolean "pets", default: false
+    t.string "photo_url"
+    t.float "reputation_score", default: 0.0
+    t.boolean "smoker", default: false
+    t.jsonb "social_links", default: {}
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id"], name: "index_profiles_on_user_id"
+  end
+
+  create_table "users", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "email", null: false
+    t.string "password_digest"
+    t.string "phone"
+    t.string "role", default: "user"
+    t.datetime "updated_at", null: false
+    t.boolean "verified_email", default: false
+    t.boolean "verified_id", default: false
+    t.index ["email"], name: "index_users_on_email", unique: true
+  end
+
+  add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "listings", "users"
+  add_foreign_key "profiles", "users"
+end
+</file>
+
 <file path="backend/db/seeds.rb">
 # This file should ensure the existence of records required to run the application in every environment (production,
 # development, test). The code here should be idempotent so that it can be executed at any point in every environment.
@@ -2004,6 +1931,22 @@ end
 
 </file>
 
+<file path="backend/test/fixtures/listings.yml">
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  title: MyString
+  description: MyText
+  price: 1
+  user: one
+
+two:
+  title: MyString
+  description: MyText
+  price: 1
+  user: two
+</file>
+
 <file path="backend/test/integration/.keep">
 
 </file>
@@ -2014,6 +1957,16 @@ end
 
 <file path="backend/test/models/.keep">
 
+</file>
+
+<file path="backend/test/models/listing_test.rb">
+require "test_helper"
+
+class ListingTest < ActiveSupport::TestCase
+  # test "the truth" do
+  #   assert true
+  # end
+end
 </file>
 
 <file path="backend/test/test_helper.rb">
@@ -2255,6 +2208,8 @@ gem "pg", "~> 1.1"
 gem 'bcrypt', '~> 3.1.7'
 gem 'jwt'
 gem 'rack-cors'
+gem 'active_model_serializers', '~> 0.10.0'
+
 
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
@@ -2338,6 +2293,385 @@ Things you may want to cover:
 * ...
 </file>
 
+<file path="frontend/app/listings/[id]/edit/page.tsx">
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import ListingForm from "../../../../components/ListingForm";
+
+export default function EditListingPage() {
+  const { id } = useParams();
+  const [listing, setListing] = useState<any>(null);
+
+  useEffect(() => {
+    async function fetchListing() {
+      const token = localStorage.getItem("token"); // 🔹 obtener token
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/listings/${id}`, {
+        headers: {
+          "Authorization": `Bearer ${token}`, // 🔹 incluir token
+        },
+      });
+      if (res.ok) {
+        setListing(await res.json());
+      }
+    }
+    fetchListing();
+  }, [id]);
+
+  async function handleSubmit(data: any) {
+    const formData = new FormData();
+    formData.append("listing[title]", data.title);
+    formData.append("listing[description]", data.description);
+    formData.append("listing[price]", data.price);
+    formData.append("listing[comuna]", data.comuna);
+    formData.append("listing[address_text]", data.address_text);
+    formData.append("listing[gastos_incluidos]", String(data.gastos_incluidos));
+
+    // Fotos nuevas
+    data.photos.forEach((file: File) => {
+      formData.append("listing[photos][]", file);
+    });
+
+    // Fotos existentes
+    data.existingPhotos.forEach((photo: { id: number; url: string }) => {
+      formData.append("existing_photos[]", String(photo.id));
+    });
+
+    const token = localStorage.getItem("token"); // 🔹 obtener token
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/listings/${id}`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token}`, // 🔹 incluir token
+      },
+      body: formData,
+    });
+  }
+
+  if (!listing) return <p>Cargando...</p>;
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Editar publicación</h1>
+      <ListingForm onSubmit={handleSubmit} initialData={listing} />
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/app/listings/[id]/page.tsx">
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Navigation, Pagination } from "swiper/modules";
+import "swiper/css";
+import "swiper/css/navigation";
+import "swiper/css/pagination";
+
+export default function ListingDetailPage() {
+  const { id } = useParams() as { id: string };
+  const [listing, setListing] = useState<any>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchListing() {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/listings/${id}`);
+      if (res.ok) {
+        setListing(await res.json());
+      }
+    }
+    fetchListing();
+  }, [id]);
+
+  // soporte teclado para modal
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!selectedPhoto || !listing?.photos) return;
+      const currentIndex = listing.photos.findIndex((p: { id: number; url: string }) => p.url === selectedPhoto);
+
+      if (e.key === "Escape") {
+        setSelectedPhoto(null);
+      } else if (e.key === "ArrowLeft") {
+        const prevIndex = (currentIndex - 1 + listing.photos.length) % listing.photos.length;
+        setSelectedPhoto(listing.photos[prevIndex].url);
+      } else if (e.key === "ArrowRight") {
+        const nextIndex = (currentIndex + 1) % listing.photos.length;
+        setSelectedPhoto(listing.photos[nextIndex].url);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedPhoto, listing]);
+
+  if (!listing) return <p className="text-center py-10">Cargando...</p>;
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      {/* Carrusel */}
+      {listing.photos?.length > 0 && (
+        <Swiper
+          modules={[Navigation, Pagination]}
+          navigation
+          pagination={{ clickable: true }}
+          className="rounded-md"
+        >
+          {listing.photos.map((photo: { id: number; url: string }, index: number) => (
+            <SwiperSlide key={photo.id}>
+              <img
+                src={photo.url}
+                alt={`Foto ${index + 1}`}
+                className="w-full h-80 object-cover rounded-md cursor-pointer"
+                onClick={() => setSelectedPhoto(photo.url)}
+              />
+            </SwiperSlide>
+          ))}
+        </Swiper>
+      )}
+
+      {/* Modal fullscreen */}
+      {selectedPhoto !== null && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <button
+            onClick={() => setSelectedPhoto(null)}
+            className="absolute top-4 right-4 text-white text-2xl font-bold hover:text-gray-300"
+          >
+            ✖
+          </button>
+          <button
+            onClick={() => {
+              const currentIndex = listing.photos.findIndex((p: { id: number; url: string }) => p.url === selectedPhoto);
+              const prevIndex = (currentIndex - 1 + listing.photos.length) % listing.photos.length;
+              setSelectedPhoto(listing.photos[prevIndex].url);
+            }}
+            className="absolute left-4 text-white text-3xl font-bold hover:text-gray-300"
+          >
+            ‹
+          </button>
+          <img
+            src={selectedPhoto}
+            alt="Foto completa"
+            className="max-h-[90%] max-w-[90%] rounded-lg shadow-lg"
+          />
+          <button
+            onClick={() => {
+              const currentIndex = listing.photos.findIndex((p: { id: number; url: string }) => p.url === selectedPhoto);
+              const nextIndex = (currentIndex + 1) % listing.photos.length;
+              setSelectedPhoto(listing.photos[nextIndex].url);
+            }}
+            className="absolute right-12 text-white text-3xl font-bold hover:text-gray-300"
+          >
+            ›
+          </button>
+        </div>
+      )}
+
+      {/* Información principal */}
+      <div className="mt-6">
+        <h1 className="text-2xl font-bold text-gray-900">{listing.title}</h1>
+        <p className="text-blue-600 font-semibold text-lg mt-2">${listing.price}</p>
+        <p className="text-gray-700 mt-4">{listing.description}</p>
+      </div>
+
+      {/* Badges */}
+      <div className="flex gap-3 mt-4">
+        <span className="bg-yellow-100 text-gray-700 px-3 py-1 rounded-full text-sm">
+          {listing.comuna}
+        </span>
+        {listing.gastos_incluidos && (
+          <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm">
+            Gastos incluidos
+          </span>
+        )}
+      </div>
+
+      {/* Publicado por */}
+      <p className="mt-4 text-sm text-gray-500">
+        Publicado por: <span className="font-medium">{listing.user?.email}</span>
+      </p>
+
+      {/* Botones de acción */}
+      <div className="mt-6 flex gap-3">
+        <Link
+          href={`/listings/${listing.id}/edit`}
+          className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md"
+        >
+          ✏️ Editar
+        </Link>
+
+        <button
+          onClick={async () => {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/listings/${listing.id}`, {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+              alert("Publicación eliminada 🗑️");
+              window.location.href = "/listings";
+            } else {
+              alert("Error al eliminar ❌");
+            }
+          }}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md"
+        >
+          🗑️ Eliminar
+        </button>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/app/listings/new/page.tsx">
+"use client";
+
+import ListingForm from "../../../components/ListingForm";
+
+export default function NewListingPage() {
+  async function handleSubmit(data: any) {
+    const formData = new FormData();
+    formData.append("listing[title]", data.title);
+    formData.append("listing[description]", data.description);
+    formData.append("listing[price]", data.price);
+    formData.append("listing[comuna]", data.comuna);
+    formData.append("listing[address_text]", data.address_text);
+    formData.append("listing[gastos_incluidos]", String(data.gastos_incluidos));
+
+    data.photos.forEach((file: File) => {
+      formData.append("listing[photos][]", file);
+    });
+    const token = localStorage.getItem("token");
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/listings`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
+      body: formData,
+    });
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Nueva publicación</h1>
+      <ListingForm onSubmit={handleSubmit} />
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/app/listings/page.tsx">
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import ListingGallery from "../../components/ListingGallery";
+
+export default function ListingsPage() {
+  const [listings, setListings] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function fetchListings() {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/listings`);
+      if (res.ok) {
+        const data = await res.json();
+        setListings(data);
+      }
+    }
+    fetchListings();
+  }, []);
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold mb-4">Publicaciones</h1>
+      <Link href="/listings/new">
+        <button className="bg-blue-600 text-white px-4 py-2 rounded-md shadow">
+          ➕ Crear publicación
+        </button>
+      </Link>
+
+      {/* Galería de publicaciones */}
+      <ListingGallery listings={listings} />
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/app/register/page.tsx">
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+export default function RegisterPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [message, setMessage] = useState("");
+  const router = useRouter();
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password,
+          password_confirmation: passwordConfirmation,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.token) {
+        localStorage.setItem("token", data.token);
+        setMessage("Registro exitoso ✅");
+        router.push("/listings"); // redirige a la lista de publicaciones
+      } else {
+        const errorMessage = data.error || "Error en el registro";
+        setMessage("Error: " + errorMessage);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage("Error de conexión ❌");
+    }
+  }
+
+  return (
+    <div>
+      <h1>Registro</h1>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="email"
+          placeholder="Correo"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          type="password"
+          placeholder="Contraseña"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <input
+          type="password"
+          placeholder="Confirmar contraseña"
+          value={passwordConfirmation}
+          onChange={(e) => setPasswordConfirmation(e.target.value)}
+        />
+        <button type="submit">Registrarse</button>
+      </form>
+      {message && <p>{message}</p>}
+    </div>
+  );
+}
+</file>
+
 <file path="frontend/app/globals.css">
 @import "tailwindcss";
 
@@ -2355,8 +2689,8 @@ Things you may want to cover:
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #ededed;
+    --foreground: #000000;
   }
 }
 
@@ -2368,106 +2702,546 @@ body {
 </file>
 
 <file path="frontend/app/layout.tsx">
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+"use client";
+
 import "./globals.css";
+import Loader from "../components/Loader";
+import Link from "next/link";
+import { AuthProvider, useAuth } from "../context/AuthContext";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+function LayoutContent({ children }: { children: React.ReactNode }) {
+  const { user, logout, loading } = useAuth();
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-export const metadata: Metadata = {
-  title: "Create Next App",
-  description: "Generated by create next app",
-};
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <body className="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
+      {/* Loader global */}
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader />
+        </div>
+      ) : (
+        <>
+          {/* Navbar */}
+          <header className="bg-white shadow">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+              <h1 className="text-xl font-bold text-blue-600">Roomies Chile</h1>
+              <nav className="space-x-6 flex items-center">
+                <Link href="/listings" className="hover:text-blue-600">Publicaciones</Link>
+                <Link href="/listings/new" className="hover:text-blue-600">Crear</Link>
+                <Link href="/profile" className="hover:text-blue-600">Perfil</Link>
+
+                {user ? (
+                  <>
+                    <span className="ml-4 text-sm text-gray-700">Hola, {user.email}</span>
+                    <button
+                      onClick={logout}
+                      className="ml-2 bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md"
+                    >
+                      Cerrar sesión
+                    </button>
+                  </>
+                ) : (
+                  <Link
+                    href="/login"
+                    className="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md"
+                  >
+                    Iniciar sesión
+                  </Link>
+                )}
+              </nav>
+            </div>
+          </header>
+
+          {/* Contenido principal */}
+          <main className="flex-1 max-w-4xl mx-auto px-4 py-6">
+            {children}
+          </main>
+
+          {/* Footer */}
+          <footer className="bg-gray-100 text-center py-4 text-sm text-gray-500">
+            © 2026 Roomies Chile · Todos los derechos reservados
+          </footer>
+        </>
+      )}
+    </body>
+  );
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="es">
+      <AuthProvider>
+        <LayoutContent>{children}</LayoutContent>
+      </AuthProvider>
     </html>
   );
 }
 </file>
 
 <file path="frontend/app/page.tsx">
-import Image from "next/image";
-
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <h1 className="text-4xl font-bold text-blue-600">
+        🚀 Tailwind funcionando en Roomies Chile
+      </h1>
     </div>
   );
+}
+</file>
+
+<file path="frontend/app/postcss.config.js">
+// postcss.config.js
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+</file>
+
+<file path="frontend/app/tailwind.config.js">
+// tailwind.config.js
+module.exports = {
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx}",
+    "./pages/**/*.{js,ts,jsx,tsx}",
+    "./components/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+</file>
+
+<file path="frontend/components/ConfirmModal.tsx">
+"use client";
+
+interface ConfirmModalProps {
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+export default function ConfirmModal({ message, onConfirm, onCancel }: ConfirmModalProps) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        background: "rgba(0,0,0,0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div style={{ background: "#fff", padding: "20px", borderRadius: "8px", textAlign: "center" }}>
+        <p>{message}</p>
+        <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "15px" }}>
+          <button
+            onClick={onConfirm}
+            style={{ background: "red", color: "#fff", padding: "8px 16px", borderRadius: "6px" }}
+          >
+            Sí
+          </button>
+          <button
+            onClick={onCancel}
+            style={{ background: "#ccc", padding: "8px 16px", borderRadius: "6px" }}
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/components/ListingCard.tsx">
+"use client";
+
+import Link from "next/link";
+
+export default function ListingCard({ listing }: { listing: any }) {
+  return (
+    <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition p-4">
+      {/* Imagen principal */}
+      {listing.photos?.[0] && (
+        <img
+          src={listing.photos[0].url}
+          alt={listing.title}
+          className="w-full h-48 object-cover rounded-md"
+        />
+      )}
+
+      {/* Título y precio */}
+      <div className="mt-3">
+        <h2 className="text-lg font-semibold text-gray-900">{listing.title}</h2>
+        <p className="text-blue-600 font-bold mt-1">${listing.price}</p>
+      </div>
+
+      {/* Descripción resumida */}
+      <p className="text-gray-600 mt-2 line-clamp-2">{listing.description}</p>
+
+      {/* Badges */}
+      <div className="flex gap-2 mt-3">
+        <span className="bg-yellow-100 text-gray-700 px-2 py-1 rounded text-xs">
+          {listing.comuna}
+        </span>
+        {listing.gastos_incluidos && (
+          <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs">
+            Gastos incluidos
+          </span>
+        )}
+      </div>
+
+      {/* Botón de acción */}
+      <Link
+        href={`/listings/${listing.id}`}
+        className="mt-4 inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
+      >
+        Ver detalle
+      </Link>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/components/ListingCarousel.tsx">
+"use client";
+
+import { useState } from "react";
+
+interface ListingCarouselProps {
+  photos: string[];
+}
+
+export default function ListingCarousel({ photos }: ListingCarouselProps) {
+  const [current, setCurrent] = useState(0);
+
+  if (!photos || photos.length === 0) {
+    return <p>📷 Sin fotos disponibles</p>;
+  }
+
+  function prevSlide() {
+    setCurrent((prev) => (prev === 0 ? photos.length - 1 : prev - 1));
+  }
+
+  function nextSlide() {
+    setCurrent((prev) => (prev === photos.length - 1 ? 0 : prev + 1));
+  }
+
+  return (
+    <div style={{ position: "relative", width: "100%", maxWidth: "600px", margin: "auto" }}>
+      <img
+        src={photos[current]}
+        alt={`Foto ${current + 1}`}
+        style={{ width: "100%", height: "400px", objectFit: "cover", borderRadius: "8px" }}
+      />
+
+      {/* Botones de navegación */}
+      <button
+        onClick={prevSlide}
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "10px",
+          transform: "translateY(-50%)",
+          background: "rgba(0,0,0,0.5)",
+          color: "#fff",
+          border: "none",
+          borderRadius: "50%",
+          width: "40px",
+          height: "40px",
+          cursor: "pointer",
+        }}
+      >
+        ‹
+      </button>
+
+      <button
+        onClick={nextSlide}
+        style={{
+          position: "absolute",
+          top: "50%",
+          right: "10px",
+          transform: "translateY(-50%)",
+          background: "rgba(0,0,0,0.5)",
+          color: "#fff",
+          border: "none",
+          borderRadius: "50%",
+          width: "40px",
+          height: "40px",
+          cursor: "pointer",
+        }}
+      >
+        ›
+      </button>
+
+      {/* Indicadores */}
+      <div style={{ textAlign: "center", marginTop: "8px" }}>
+        {photos.map((_, index) => (
+          <span
+            key={index}
+            onClick={() => setCurrent(index)}
+            style={{
+              cursor: "pointer",
+              fontSize: "1.5rem",
+              margin: "0 4px",
+              color: index === current ? "#333" : "#ccc",
+            }}
+          >
+            •
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/components/ListingForm.tsx">
+"use client";
+
+import { useState, useEffect } from "react";
+
+export default function ListingForm({
+  onSubmit,
+  initialData,
+}: {
+  onSubmit: (data: any) => void;
+  initialData?: any;
+}) {
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    price: "",
+    comuna: "",
+    address_text: "",
+    gastos_incluidos: false,
+    photos: [] as File[],                // nuevas fotos
+    existingPhotos: [] as { id: number; url: string }[], // fotos ya guardadas
+  });
+
+  // Cargar datos iniciales en modo edición
+  useEffect(() => {
+  if (initialData) {
+    setFormData((prev) => ({
+      ...prev,
+      title: initialData.title || "",
+      description: initialData.description || "",
+      price: initialData.price || "",
+      comuna: initialData.comuna || "",
+      address_text: initialData.address_text || "",
+      gastos_incluidos: initialData.gastos_incluidos || false,
+      photos: [], // nuevas fotos vacías
+      existingPhotos: initialData.photos.map((p: any) => ({
+        id: p.id,
+        url: p.url,
+      })),
+    }));
+  }
+}, [initialData]);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    const { name, value, type, checked } = e.target as any;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files) {
+      setFormData((prev) => ({
+        ...prev,
+        photos: Array.from(e.target.files),
+      }));
+    }
+  }
+
+  // 🔹 Eliminar foto existente del preview (por id)
+  function handleRemoveExistingPhoto(id: number) {
+    setFormData((prev) => ({
+      ...prev,
+      existingPhotos: prev.existingPhotos.filter((photo) => photo.id !== id),
+    }));
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    onSubmit(formData);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 rounded-lg shadow-md">
+      {/* Inputs igual que antes */}
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Título</label>
+        <input
+          type="text"
+          name="title"
+          value={formData.title}
+          onChange={handleChange}
+          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Descripción</label>
+        <textarea
+          name="description"
+          value={formData.description}
+          onChange={handleChange}
+          rows={4}
+          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Precio</label>
+        <input
+          type="number"
+          name="price"
+          value={formData.price}
+          onChange={handleChange}
+          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Comuna</label>
+        <input
+          type="text"
+          name="comuna"
+          value={formData.comuna}
+          onChange={handleChange}
+          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Dirección</label>
+        <input
+          type="text"
+          name="address_text"
+          value={formData.address_text}
+          onChange={handleChange}
+          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+        />
+      </div>
+
+      <div className="flex items-center">
+        <input
+          type="checkbox"
+          name="gastos_incluidos"
+          checked={formData.gastos_incluidos}
+          onChange={handleChange}
+          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+        />
+        <label className="ml-2 text-sm text-gray-700">Gastos incluidos</label>
+      </div>
+
+      {/* Fotos nuevas */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Fotos nuevas</label>
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={handleFileChange}
+          className="mt-1 block w-full text-sm text-gray-500"
+        />
+      </div>
+
+      {/* 🔹 Preview de fotos existentes con botón eliminar */}
+      {formData.existingPhotos.length > 0 && (
+        <div className="mt-4">
+          <p className="text-sm font-medium text-gray-700">Fotos actuales</p>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            {formData.existingPhotos.map((photo) => (
+              <div key={photo.id} className="relative">
+                <img
+                  src={photo.url}
+                  alt="Foto"
+                  className="w-full h-32 object-cover rounded-md shadow"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveExistingPhoto(photo.id)}
+                  className="absolute top-1 right-1 bg-red-600 text-white text-xs px-2 py-1 rounded"
+                >
+                  ✖
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+
+      <button
+        type="submit"
+        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md shadow"
+      >
+        Guardar publicación
+      </button>
+    </form>
+  );
+}
+</file>
+
+<file path="frontend/components/ListingGallery.tsx">
+import ListingCard from "../components/ListingCard";
+
+export default function ListingsPage({ listings }: { listings: any[] }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {listings.map((listing) => (
+        <ListingCard key={listing.id} listing={listing} />
+      ))}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/hooks/useListings.ts">
+import { useEffect, useState } from "react";
+
+interface Listing {
+  id: number;
+  title: string;
+  description: string;
+  price: number;
+  user_id: number;
+}
+
+export function useListings() {
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchListings() {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/listings`);
+        const data = await res.json();
+        setListings(data);
+      } catch (err) {
+        console.error("Error fetching listings:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchListings();
+  }, []);
+
+  return { listings, loading };
 }
 </file>
 
@@ -2518,73 +3292,6 @@ export async function register(email, password, passwordConfirmation) {
     body: JSON.stringify({ email, password, password_confirmation: passwordConfirmation }),
   });
   return res.json();
-}
-</file>
-
-<file path="frontend/pages/login.js">
-import { useState } from 'react';
-import { login } from '../lib/api';
-
-export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('');
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const data = await login(email, password);
-    if (data.token) {
-      localStorage.setItem('token', data.token);
-      setMessage('Login exitoso');
-    } else {
-      setMessage(data.error || 'Error en login');
-    }
-  }
-
-  return (
-    <div className="max-w-md mx-auto mt-10">
-      <h1 className="text-xl font-bold mb-4">Login</h1>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          className="w-full border p-2"
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          className="w-full border p-2"
-        />
-        <button type="submit" className="w-full bg-blue-500 text-white p-2">
-          Entrar
-        </button>
-      </form>
-      {message && <p className="mt-4">{message}</p>}
-    </div>
-  );
-}
-</file>
-
-<file path="frontend/pages/profile.js">
-import useProfile from '../hooks/useProfile';
-
-export default function ProfilePage() {
-  const { profile, loading } = useProfile();
-
-  if (loading) return <p>Cargando...</p>;
-  if (!profile) return <p>No hay sesión activa</p>;
-
-  return (
-    <div className="max-w-md mx-auto mt-10">
-      <h1 className="text-xl font-bold mb-4">Perfil</h1>
-      <p>Email: {profile.email}</p>
-      <p>ID: {profile.id}</p>
-    </div>
-  );
 }
 </file>
 
@@ -2671,7 +3378,7 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0"]
 </file>
 
 <file path="frontend/eslint.config.mjs">
@@ -2717,18 +3424,23 @@ export default nextConfig;
     "lint": "eslint"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.10",
+    "cloudinary": "^2.10.0",
     "next": "16.2.6",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "swiper": "^12.1.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "autoprefixer": "^10.5.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
-    "tailwindcss": "^4",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5"
   }
 }
