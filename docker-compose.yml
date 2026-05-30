@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   db:
     image: postgres:14
@@ -46,6 +45,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
     ports:
       - "3009:3000"
     environment:
@@ -55,3 +55,4 @@ services:
 
 volumes:
   db-data:
+  frontend-node-modules:
