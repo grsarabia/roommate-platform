@@ -1,0 +1,27 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  user: one
+  genero_preferido: MyString
+  edad_min: 1
+  edad_max: 1
+  precio_min: 1
+  precio_max: 1
+  comunas_preferidas: 
+  con_mascotas_ok: false
+  fumador_ok: false
+  nivel_limpieza_min: 1
+  horarios_compatibles: MyString
+
+two:
+  user: two
+  genero_preferido: MyString
+  edad_min: 1
+  edad_max: 1
+  precio_min: 1
+  precio_max: 1
+  comunas_preferidas: 
+  con_mascotas_ok: false
+  fumador_ok: false
+  nivel_limpieza_min: 1
+  horarios_compatibles: MyString
